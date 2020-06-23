@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-pip3 install pandas
 
 cd ./code/auto_download
 

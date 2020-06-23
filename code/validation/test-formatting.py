@@ -41,6 +41,25 @@ def filename_match_forecast_date(filename):
 
 # Check forecast formatting
 
+def get_current_count(forecast_date):
+    
+    # extract current cum deaths based on jhu
+    jhu = pd.read_csv("data-truth/JHU/truth_JHU-Cumulative Deaths_Germany.csv")
+    try:
+        jhu_cum = jhu[jhu["date"] == forecast_date]["value"].values[0]
+    # if there i sno truth data for the forecast date, take the last reported truth
+    except IndexError:
+        jhu_cum = jhu.iloc[[-1]]["value"].values[0]
+    
+    ecdc = pd.read_csv("data-truth/ECDC/truth_ECDC-Cumulative Deaths_Germany.csv")
+    try:
+        ecdc_cum = ecdc[ecdc["date"] == forecast_date]["value"].values[0]
+    
+    except IndexError:
+        ecdc_cum = ecdc.iloc[[-1]]["value"].values[0]
+    
+    return min([jhu_cum, ecdc_cum])
+
 
 def check_formatting(my_path):
     output_errors = {}
@@ -56,9 +75,16 @@ def check_formatting(my_path):
             if filepath not in previous_checked:
                 # delete validated file if currrently present
                 df = df[df['file_path'] != filepath]
-
+                
+                # get forecast date
+                file_forecast_date = os.path.basename(os.path.basename
+                                                      (filepath))[:10]
+                
+                lower_bound = get_current_count(file_forecast_date)
+                
                 # validate file
-                file_error = covid19.validate_quantile_csv_file(filepath)
+                file_error = covid19.validate_quantile_csv_file(filepath,
+                                                                lower_bound)
 
                 # Check forecast file date = forecast_date column
                 forecast_date_error = filename_match_forecast_date(filepath)

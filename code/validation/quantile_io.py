@@ -19,7 +19,7 @@ OBS_PREDICTION_CLASS = "obs"
 
 # quantile csv I/O
 
-REQUIRED_COLUMNS = ('location', 'target', 'type', 'quantile', 'value')
+REQUIRED_COLUMNS = ('forecast_date', 'location', 'target', 'type', 'quantile', 'value')
 
 
 #
@@ -36,7 +36,7 @@ REQUIRED_COLUMNS = ('location', 'target', 'type', 'quantile', 'value')
 # json_io_dict_from_quantile_csv_file()
 #
 
-def json_io_dict_from_quantile_csv_file(csv_fp, valid_target_names, row_validator=None, addl_req_cols=()):
+def json_io_dict_from_quantile_csv_file(csv_fp, valid_target_names, lower_bound, row_validator=None, addl_req_cols=()):
     """
     Utility that validates and extracts the two types of predictions found in quantile CSV files (PointPredictions and
     QuantileDistributions), returning them as a "JSON IO dict" suitable for loading into the database (see
@@ -66,7 +66,7 @@ def json_io_dict_from_quantile_csv_file(csv_fp, valid_target_names, row_validato
         if there were errors
     """
     # load and validate the rows (validation step 1/2). error_messages is one of the the return values (filled next)
-    rows, error_messages = _validated_rows_for_quantile_csv(csv_fp, valid_target_names, row_validator, addl_req_cols)
+    rows, error_messages = _validated_rows_for_quantile_csv(csv_fp, valid_target_names, row_validator, addl_req_cols, lower_bound)
 
     if error_messages:
         return None, error_messages  # terminate processing b/c we can't proceed to step 1/2 with invalid rows
@@ -143,7 +143,7 @@ def json_io_dict_from_quantile_csv_file(csv_fp, valid_target_names, row_validato
     return {'meta': {}, 'predictions': prediction_dicts}, error_messages
 
 
-def _validated_rows_for_quantile_csv(csv_fp, valid_target_names, row_validator, addl_req_cols):
+def _validated_rows_for_quantile_csv(csv_fp, valid_target_names, row_validator, addl_req_cols, lower_bound):
     """
     `json_io_dict_from_quantile_csv_file()` helper function.
 
@@ -172,7 +172,7 @@ def _validated_rows_for_quantile_csv(csv_fp, valid_target_names, row_validator, 
             return [], error_messages  # terminate processing
 
         # do optional application-specific row validation. NB: error_messages is modified in-place as a side-effect
-        location, target_name, row_type, quantile, value = [row[column_index_dict[column]] for column in
+        forecast_date, location, target_name, row_type, quantile, value = [row[column_index_dict[column]] for column in
                                                             REQUIRED_COLUMNS]
         if row_validator:
             error_messages.extend(row_validator(column_index_dict, row))
@@ -206,6 +206,12 @@ def _validated_rows_for_quantile_csv(csv_fp, valid_target_names, row_validator, 
                                (isinstance(value, datetime.date)) or
                                (not math.isfinite(value))):   # inf, nan
             error_messages.append(f"entries in the `value` column must be nan if type is observed: {value}. row={row}")
+            
+        if "cum" in target_name:
+            if (target_name[0] != "0" and target_name[0] != "-"):
+                if value < lower_bound:
+                    error_messages.append(f"cum entries in the `value` column must >= than the latest reported cum death count: {value}. row={row}")
+                
 
         # convert parsed date back into string suitable for JSON.
         # NB: recall all targets are "type": "discrete", so we only accept ints and floats
